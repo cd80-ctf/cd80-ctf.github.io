@@ -18,6 +18,7 @@ Basically, we can view a CLFS log as what would happen if a "normal" log file ex
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/cd80-ctf/cd80-ctf.github.io/master/assets/log_explosion.png">
+  <div align="center">Figure 1: A normal log file and a CLFS log. For added effect, imagine the log file smiling and all the CLFS fragments screaming.</div>
 </p>
 
 Amongst this lattice, we are most interested in the metadata part -- that's the Base Log File (BLF). The BLF is extremely complex and entirely attacker-controlled, so it's an obvious target for exploitation. We will focus on the BLF for the remainder of this writeup.
