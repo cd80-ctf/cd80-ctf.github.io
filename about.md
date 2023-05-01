@@ -3,4 +3,4 @@ layout: page
 title: About
 ---
 
-Professional and hobbyist thing breaker.
+i just get bored and start scheming
