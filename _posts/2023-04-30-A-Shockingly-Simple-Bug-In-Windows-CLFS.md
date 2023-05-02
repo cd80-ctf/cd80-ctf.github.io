@@ -33,8 +33,8 @@ The Base Log File is where the metadata for a CLFS log lives. Because this is CL
 - Only three of the BLF's Log Blocks are interesting. The other three are backup copies ("shadows") of the main three, and are [mostly useful for their use-after-free vulnerabilities](https://blog.exodusintel.com/2022/03/10/exploiting-a-use-after-free-in-windows-common-logging-file-system-clfs/).
 - The three potentially interesting Log Blocks in the Base Log File are:
   1. The **Control Metadata Block**, which mostly contains metadata about the other metadata blocks (that's metadata layer 3!)
-  2. The **Base Metadata Block**, which monstly contains metadata about the actual log data
-  3. The **Scratch Metadata Block**, which is a box of discarded toys where Microsoft dumps metadata that didn't fit anywhere else. Currently, this block only contains information about how logs are being truncated.
+  2. The **Base Metadata Block**, which mostly contains metadata about the actual log data
+  3. The **Scratch Metadata Block**, which is a box of discarded toys where Bill Gates throws metadata that didn't fit anywhere else. Currently, this block only contains information about how logs are being truncated.
 
 Of these three potentially interesting Log Blocks, only the Base Metadata Block is actually interesting to us right now.
 
