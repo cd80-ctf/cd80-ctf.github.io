@@ -40,7 +40,7 @@ Of these three potentially interesting Log Blocks, only the Base Metadata Block 
 
 ## The Base Metadata Block
 
-All Log Blocks contain Records. The Base Log Block of the Base Metadata File of a CLFS log contains one Record, fittingly dubbed the Base Record.
+All Log Blocks contain Records. The Base Metadata Block of the Base Metadata File of a CLFS log contains one Record, fittingly dubbed the Base Record.
 
 The Base Record of the Base Metadata Block of the Base Log File of a CLFS log (don't worry, it gets worse) contains metadata about the log itself. Specifically, it contains metadata about three things:
 - The Clients (i.e. streams) that are storing data in this log,
