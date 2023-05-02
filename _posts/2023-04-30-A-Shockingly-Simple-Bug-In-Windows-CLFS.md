@@ -46,6 +46,7 @@ The Base Record of the Base Metadata Block of the Base Log File of a CLFS log (d
 - The Clients (i.e. streams) that are storing data in this log,
 - The Containers in this log (which, remember, is where actual log messages are kept)
 - The Security Descriptors of each Container
+
 The Base Record also stores information about these things -- how many Clients are present, how many Containers, etc. -- in a header called the Base Record Header. The Base Record Header of the Base Record of the Base Metadata Block of the Base Log File of a CLFS log. Isn't that great?
 
 If you're getting confused, don't worry: so is Microsoft. In fact, we already know almost all we need to know to understand the vulnerability. Basically, all we have to do is lay out the Base Record Header, ask the most obvious security question that the structure presents to us, and be rewarded with a dirt simple privilege escalation that's been hiding since Windows Vista. Take heart: the hard part is almost done.
