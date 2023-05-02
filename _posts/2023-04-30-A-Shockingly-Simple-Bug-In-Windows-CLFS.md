@@ -38,7 +38,7 @@ The Base Log File is where the metadata for a CLFS log lives. Because this is CL
 
 Of these three potentially interesting Log Blocks, only the Base Metadata Block is actually interesting to us right now.
 
-## The Base Log Block
+## The Base Metadata Block
 
 All Log Blocks contain Records. The Base Log Block of the Base Metadata File of a CLFS log contains one Record, fittingly dubbed the Base Record.
 
