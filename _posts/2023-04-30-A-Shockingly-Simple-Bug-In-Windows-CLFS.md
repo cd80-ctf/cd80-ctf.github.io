@@ -50,3 +50,70 @@ The Base Record of the Base Metadata Block of the Base Log File of a CLFS log (d
 The Base Record also stores information about these things -- how many Clients are present, how many Containers, etc. -- in a header called the Base Record Header. The Base Record Header of the Base Record of the Base Metadata Block of the Base Log File of a CLFS log. Isn't that great?
 
 If you're getting confused, don't worry: so is Microsoft. In fact, we already know almost all we need to know to understand the vulnerability. Basically, all we have to do is lay out the Base Record Header, ask the most obvious security question that the structure presents to us, and be rewarded with a dirt simple privilege escalation that's been hiding since Windows Vista. Take heart: the hard part is almost done.
+
+## The Base Record Header
+
+The Base Record Header is where CVE-2022-24481 sleeps. Since we've already done our homework on the Base Record, we should be able to sightread the struct pretty easily. Here it is, annotated where necessary:
+
+```c
+struct _CLFS_BASE_RECORD_HEADER {
+  ulongulong DumpCount;  // essentially an update count with a fancy name
+  uchar LogId[16];
+  ulonglong ClientSymbolHashTable[11];  // hash table for looking up client metadata
+  ulonglong ContainerSymbolHashTable[11];  // " for container metadata
+  ulonglong SecuritySymbolHashTable[11];  // " for security context metadata
+  ulong NextAvailableContainerIndex;
+  ulong NextAvailableClientIndex;
+  ulong NumFreeContainers;  // unused(?)
+  ulong NumActiveContainers;  // unused(?)
+  ulonglong Unused;
+  ulong ClientMetadataOffsets[124];  // offsets to each client metadata struct
+  ulong ContainerMetadataOffsets[1024];  // offsets to each container metadata struct
+  ulong NextAvailableSymbolOffset;  // next available offset for some client, container, or security metadata
+  ulong Unused;
+  ushort Unused;
+  uchar LogState;
+  uchar NextContainerUsn;  // next unique sequence number (basically, a UUID) for a container
+  uchar NumClients;
+}
+```
+
+There is some complexity hiding in this struct. For example, the hash tables for looking up different types of metadata might deserve a deeper dive in another writeup. Thankfully for us, this is entirely unnecessary, because the bug is already hiding right under our nose.
+
+Consider this struct for a second. Suppose we were an attacker with full control of this struct (which we are). What is the first tricky thing we might do to see if we could confuse the kernel?
+
+The first thought that might come to mind is type confusion. We have two arrays (`ClientMetadataOffsets` and `ContainerMetadataOffsets`) which contain the offsets of two different types of structs (client metadata and container metadata). What if we could make two of those offsets overlap? Could we line up
+a sensitive field of one struct (say, a kernel pointer) with an easily controllable field of another (say, the creation time)?
+
+There's no way that's the bug, is there?
+
+## That's Literally The Bug
+
+Remember when I said simple bugs? I wasn't kidding. In the official parlance, **CVE-2022-24481 is a type confusion vulnerability in CLFS due to insufficient offset validation in the Base Record Header.** In the common parlance, no one at Microsoft looked at this struct for the five seconds necessary to realize
+that we could create horrible *The Fly*-style conglomerations of client and container metadata. Doing so allows us to fake any field in either struct, which, inevitably, will lead to privilege escalation.
+
+# Simple Bug, Complex Exploit
+
+So we know where CVE-2022-24481 lives. In modern Windows exploitation, this is commonly known as "the easy part." We know that we can create overlapping client and container metadata structs. Great. Now, how do we use that to elevate to SYSTEM?
+
+## The Target Structs
+
+Before we make horrifying mutants out of these client and container structs, we need to understand what they look like. Thankfully, neither struct is overly complicated. We'll start with the container metadata struct:
+
+```c
+struct _CLFS_CONTAINER_CONTEXT {
+  CLFS_NODE_ID NodeId;  // a tiny struct that mostly functions as a "type tag" (remember this)
+  ulonglong ContainerSize;
+  ulong ContainerId;
+  ulong QueueId;  // if this container is in a "container queue," this is the ID of that
+  union {
+    CClfsContainer* pContainer;  // pointer to the container class in memory (!!!)
+    ulonglong Alignment;  // or a padding field, to ensure the kernel pointer never touches the disk
+  };
+  uchar Usn;
+  uchar ContainerState;
+  ushort Padding;  // i think?
+  ulong PreviousContainerOffset;  // doesn't seem like this is ever used
+  ulong NextContainerOffset;  // ditto
+}
+```
