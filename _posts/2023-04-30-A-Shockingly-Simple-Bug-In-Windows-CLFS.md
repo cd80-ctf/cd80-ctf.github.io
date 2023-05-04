@@ -98,7 +98,9 @@ So we know where CVE-2022-24481 lives. In modern Windows exploitation, this is c
 
 ## The Target Structs
 
-Before we make horrifying mutants out of these client and container structs, we need to understand what they look like. Thankfully, neither struct is overly complicated. We'll start with the container metadata struct:
+Before we make horrifying mutants out of these client and container structs, we need to understand what they look like. We'll be looking for two types of fields: fields that would be interesting to overwrite (like kernel pointers), and fields that we can easily control. Our goal is to overlap a controllable field of one struct with an interesting field of another.
+
+We'll start with the container struct, since it's the simpler of the two:
 
 ```c
 struct _CLFS_CONTAINER_CONTEXT {
@@ -115,5 +117,41 @@ struct _CLFS_CONTAINER_CONTEXT {
   ushort Padding;  // i think?
   ulong PreviousContainerOffset;  // doesn't seem like this is ever used
   ulong NextContainerOffset;  // ditto
+}
+```
+
+Recall the two types of fields we're looking for. As far as controllable fields, this struct is pretty barren. The only one we *might* be able to control is the size, and it's unlikely we could make a size large enough to fake a kernel pointer (which, remember, start at `0x800000000000`). Thus the container metadata is barren in terms of controllable fields.
+However, it *does* contain a kernel pointer. The `pContainer` field, in memory, points to a more detailed container struct. Thus if we can overwrite that field, we can potentially fake a container struct. We might also be able to trick the kernel into doing certain operations on that address; for example "freeing" the (overwritten) pointer might decrement a "reference counter" at a fixed offset from the overwritten pointer.
+In either case, there is potential for shenanigans here. We will therefore mark the container struct as a "no" for controllable fields, but a "yes" for interesting fields.
+
+Next, let's look at the client struct (remember, a client represents a stream that is using this log). We'll be on special lookout for controllable fields, since the container struct didn't have any.
+
+```c
+struct _CLFS_CLIENT_CONTEXT {
+  CLFS_NODE_ID NodeId; // the same "type tag" struct as the container context, but with a different value(?)
+  uchar ClientId;
+  uchar Unknown;
+  ushort FileAttributes;  // Windows File Attributes associated with the BLF (why is this here?)
+  ulong FlushThreshold;  // number of log bytes in memory before this stream flushes them to disk
+  ulong NumShadowSectors;  // unused
+  ulong Padding;
+  ulonglong UndoCommitment;  // max number of bytes the stream will ask to undo (?)
+  ulonglong CreateTime;
+  ulonglong LastAccessTime;
+  ulonglong LastWriteTime;
+  CLFS_LSN lsnOwnerPage;  // Log Sequence Numbers (identifiers) of certain Records from this client
+  CLFS_LSN lsnArchiveTail;
+  CLFS_LSN lsnBase;
+  CLFS_LSN lsnLast;
+  CLFS_LSN lsnRestart;
+  CLFS_LSN lsnPhysicalBase;
+  CLFS_LSN lsnUnused1;
+  CLFS_LSN lsnUnused2;
+  CLFS_LOG_STATE eState;  // current log state (for this client?)
+  union
+  {
+      HANDLE hSecurityContext;  // in-memory security context associated with this client...
+      ULONGLONG ullAlignment;  // or nothing on disk
+  };
 }
 ```
