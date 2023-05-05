@@ -121,8 +121,7 @@ struct _CLFS_CONTAINER_CONTEXT {
 ```
 
 Recall the two types of fields we're looking for. As far as controllable fields, this struct is pretty barren. The only one we *might* be able to control is the size, and it's unlikely we could make a size large enough to fake a kernel pointer (which, remember, start at `0x800000000000`). Thus the container metadata is barren in terms of controllable fields.
-However, it *does* contain a kernel pointer. The `pContainer` field, in memory, points to a more detailed container struct. Thus if we can overwrite that field, we can potentially fake a container struct. We might also be able to trick the kernel into doing certain operations on that address; for example "freeing" the (overwritten) pointer might decrement a "reference counter" at a fixed offset from the overwritten pointer.
-In either case, there is potential for shenanigans here. We will therefore mark the container struct as a "no" for controllable fields, but a "yes" for interesting fields.
+However, it *does* contain a kernel pointer. The `pContainer` field, in memory, points to a more detailed container struct. Thus if we can overwrite that field, we can potentially fake a container struct. We will therefore mark the container struct as a "no" for controllable fields, but a "yes" for interesting fields.
 
 Next, let's look at the client struct (remember, a client represents a stream that is using this log). We'll be on special lookout for controllable fields, since the container struct didn't have any.
 
@@ -151,7 +150,22 @@ struct _CLFS_CLIENT_CONTEXT {
   union
   {
       HANDLE hSecurityContext;  // in-memory security context associated with this client...
-      ULONGLONG ullAlignment;  // or nothing on disk
+      ULONGLONG ullAlignment;  // ...or nothing on disk
   };
 }
 ```
+
+A few fields jump out at us. Things like `CreateTime` and `LastAccessTime` might not be arbitrarily settable in memory, but we might be able to lie about them on disk. In a dream world, this might look something like this:
+
+1. We create an evil CLFS Base Log File with overlapping offsets
+2. The CLFS driver reads the container metadata into memory first, then the client metadata. This is where we overwrite `pContainer`.
+3. We call some function that uses this our custom `pContainer` for interesting things.
+
+Alternatively, if the client metadata is read before the container metadata, we might try something like this:
+
+1. Create evil Base Log File
+2. Read the evil client metadata, which is stored in some other object.
+3. Write the metadata from that object back to the client metadata struct, overwriting `pContainer`
+4. Shenanigans with `pContainer`.
+
+As it so happens, when a Base Log File is parsed, the client metadata is read first. Thus we will adopt the second battle plan.
