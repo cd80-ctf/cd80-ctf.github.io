@@ -164,8 +164,8 @@ A few fields jump out at us. Things like `CreateTime` and `LastAccessTime` might
 Alternatively, if the client metadata is read before the container metadata, we might try something like this:
 
 1. Create evil Base Log File
-2. Read the evil client metadata, which is stored in some other object.
-3. Write the metadata from that object back to the client metadata struct, overwriting `pContainer`
+2. Read the evil client metadata, which is then stored in some other object.
+3. Write the metadata from that other object back to the client metadata struct, overwriting `pContainer`
 4. Shenanigans with `pContainer`.
 
 As it so happens, when a Base Log File is parsed, the client metadata is read first. Thus we will adopt the second battle plan.
