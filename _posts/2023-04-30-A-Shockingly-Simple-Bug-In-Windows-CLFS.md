@@ -169,3 +169,59 @@ Alternatively, if the client metadata is read before the container metadata, we 
 4. Shenanigans with `pContainer`.
 
 As it so happens, when a Base Log File is parsed, the client metadata is read first. Thus we will adopt the second battle plan.
+
+## Creating an Evil `pContainer`
+
+Our goal in this section is to overwrite the `pContainer` field of a container context. If we can do this, we can fake a `CClfsContainer` object. Our plan from that point forward is along the lines of ???? -> Profit. This is how exploit development works in practice: one step at a time, with frequent setbacks. Faking a kernel object like `pContainer` seems like it might lead to shenanigans -- let's try it and see what falls out.
+
+We will follow our battle plan from the previous section. Assuming we've created the evil Base Log File, the first step is to find an "intermediate" object that can hold our evil client metadata. Doing this amounts to searching Ghidra for instances of `CLFS_CLIENT_CONTEXT`. For once, the exploit gods are on our side and we find one rather quickly:
+
+```c
+long CClfsLogFcbPhysical::Initialize(CClfsLogFcbPhysical* this, [many parameters]) {
+  [lots of code]
+  CClfsBaseFile::AcquireClientContext(*(CClfsBaseFile **)(this + 0x2b0),'\0',&local_a0);  [1]
+  [more code] 
+  *(ushort *)(this + 0x170) = local_a0->FileAttributes;
+  *(ulong *)(this + 0x4f4) = local_a0->FlushThreshold;
+  if (((*(byte *)&local_a0->LogState & 0x20) == 0) ||
+     (cVar10 = _guard_dispatch_icall(this), cVar10 != '\0')) {
+    *(ulonglong *)(this + 0x1a8) = local_a0->CreateTime;  [2]
+    *(ulonglong *)(this + 0x1b0) = local_a0->LastAccessTime;
+    *(ulonglong *)(this + 0x1b8) = local_a0->LastWriteTime;
+    *(undefined8 *)(this + 0x1d0) = 0;
+    *(ulonglong *)(this + 0x538) = local_a0->OwnerPageLsn;
+    *(ulonglong *)(this + 0x1e8) = local_a0->ArchiveTailLsn;
+    *(ulonglong *)(this + 0x1e0) = local_a0->BaseLsn;
+    *(ulonglong *)(this + 0x1f0) = local_a0->LastLsn;
+    *(ulonglong *)(this + 0x1f8) = local_a0->RestartLsn;
+    *(ulong *)(this + 0x174) = local_a0->ShadowSectors;
+  [yet more code]
+}
+```
+
+This function is called when a Base Log File is read in from memory. We can see a client context is read in at `[1]`, and several fields are assigned to fields of the `CClfsLogFcbPhysical` object at `[2]`. Since these files are read straight from disk, we have full control over them. Thus we can use a `CClfsLogFcbPhysical` object to hold our evil values.
+
+How about writing them back to disk? This time, we'll look through all functions that use a `CClfsLogFcbPhysical` object. Pretty quickly, we find what we're looking for:
+
+```c
+long CClfsLogFcbPhysical::FlushMetadata(CClfsLogFcbPhysical *this) {
+  local_res8 = (_CLFS_CLIENT_CONTEXT *)0x0;
+  lVar3 = CClfsBaseFile::AcquireClientContext(*(CClfsBaseFile **)(this + 0x2b0),'\0',&local_res8);
+  [heaps of code]
+  local_res8->CreateTime = *(ulonglong *)(this + 0x1a8);
+  local_res8->LastAccessTime = *(ulonglong *)(this + 0x1b0);
+  local_res8->LastWriteTime = *(ulonglong *)(this + 0x1b8);
+  local_res8->OwnerPageLsn = *(ulonglong *)(this + 0x538);
+  local_res8->ArchiveTailLsn = *(ulonglong *)(this + 0x1e8);
+  local_res8->BaseLsn = *(ulonglong *)(this + 0x1e0);
+  local_res8->LastLsn = *(ulonglong *)(this + 0x1f0);
+  local_res8->RestartLsn = *(ulonglong *)(this + 0x1f8);
+  local_res8->ShadowSectors = *(ulong *)(this + 0x174);
+  local_res8->FileAttributes = *(ushort *)(this + 0x170);
+  [code code code]
+}
+```
+
+Perfect! This function does exactly what we're looking for; it dumps the stored (evil) client metadata back into the client context struct. If this struct is overlapping with a container context, **this will allow us to overwrite `pContainer` with an arbitrary value.**
+
+Step one is done. We have a way to corrupt the `pContainer` field of a container context. Now we start the *real* tricky part: figuring out if there are sneaky things we can do with this corrupted pointer. If this post were written five years ago, we would have two obvious solutions. A year ago, we would have one -- the one used in the ransomware where this exploit was discovered. As of today, Microsoft has patched both of those methods. We will have to improvise.
