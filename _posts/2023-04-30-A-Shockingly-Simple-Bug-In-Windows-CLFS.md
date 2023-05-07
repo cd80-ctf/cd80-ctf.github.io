@@ -237,6 +237,9 @@ If we do this, we end up with the following list of functions:
 - `CClfsLogFcbPhysical::GetContainer`
 - `CClfsLogFcbPhysical::FlushLog`
 - `CClfsLogFcbPhysical::CloseContainers`
+- `CClfsLogFcbPhysical::GetArchiveDescriptors`
+- `CClfsLogFcbPhysical::WrapDeletePendingContainer`
+- `CClfsLogFcbPhysical::DeleteContainer` (several times)
 - `CClfsBaseFilePersisted::WriteMetadataBlock`
 - `CClfsBaseFilePersisted::CheckSecureAccess`
 - `CClfsBaseFilePersisted::LoadContainerQ` (this uses `pContainer` a *lot*)
@@ -244,9 +247,6 @@ If we do this, we end up with the following list of functions:
 - `CClfsBaseFilePersisted::MarkContainerQ`
 - `CClfsBaseFilePersisted::UnmarkContainerQ`
 - `CClfsBaseFilePersisted::RemoveContainer`
-- `CClfsLogFcbPhysical::DeleteContainer` (several times)
 - `CClfsBaseFile::ScanContainerInfo`
-- `CClfsLogFcbPhysical::GetArchiveDescriptors`
-- `CClfsLogFcbPhysical::WrapDeletePendingContainer`
 
 This might seem like a lot. It is. Don't worry. We'll go through these options one by one, starting with the simplest and eliminating functions that we conclude aren't useful. By the end, hopefully, we'll have something with which to do evil.
