@@ -225,3 +225,28 @@ long CClfsLogFcbPhysical::FlushMetadata(CClfsLogFcbPhysical *this) {
 Perfect! This function does exactly what we're looking for; it dumps the stored (evil) client metadata back into the client context struct. If this struct is overlapping with a container context, **this will allow us to overwrite `pContainer` with an arbitrary value.**
 
 Step one is done. We have a way to corrupt the `pContainer` field of a container context. Now we start the *real* tricky part: finding sneaky things we can do with this corrupted pointer. If this post were written five years ago, we would have two obvious solutions. A year ago, we would have one -- the one used in the ransomware where this exploit was discovered. As of today, Microsoft has patched both of those methods. We will have to improvise.
+
+## What Can We Do With `pContainer`?
+
+At this point, let's assume we've faked a Container Context's `pContainer` field. We now have to find a function that does interesting (read: abusable) things with `pContainer`. Ideally, we'd like to find functions that write to, or read from, some offset of our fake `pContainer` object.
+Doing this will allow us to further corrupt kernel memory, ideally leading to a state where we can read/write to/from any kernel address we want. If we can do that, we'll be out of the woods -- arbitrary kernel R/W on Windows is a free ticket to SYSTEM.
+
+To start, let's find all the functions that use a Container Context's `pContainer` field. Thanks to the American taxpayer, this is very simple. We can simply fill out the struct in Ghidra, right-click, and hit "Find Uses By Field." Doing so will give us a list of every time the `pContainer` field is accessed.
+
+If we do this, we end up with the following list of functions:
+- `CClfsLogFcbPhysical::GetContainer`
+- `CClfsLogFcbPhysical::FlushLog`
+- `CClfsLogFcbPhysical::CloseContainers`
+- `CClfsBaseFilePersisted::WriteMetadataBlock`
+- `CClfsBaseFilePersisted::CheckSecureAccess`
+- `CClfsBaseFilePersisted::LoadContainerQ` (this uses `pContainer` a *lot*)
+- `CClfsBaseFilePersisted::UnoadContainerQ`
+- `CClfsBaseFilePersisted::MarkContainerQ`
+- `CClfsBaseFilePersisted::UnmarkContainerQ`
+- `CClfsBaseFilePersisted::RemoveContainer`
+- `CClfsLogFcbPhysical::DeleteContainer` (several times)
+- `CClfsBaseFile::ScanContainerInfo`
+- `CClfsLogFcbPhysical::GetArchiveDescriptors`
+- `CClfsLogFcbPhysical::WrapDeletePendingContainer`
+
+This might seem like a lot. It is. Don't worry. We'll go through these options one by one, starting with the simplest and eliminating functions that we conclude aren't useful. By the end, hopefully, we'll have something with which to do evil.
