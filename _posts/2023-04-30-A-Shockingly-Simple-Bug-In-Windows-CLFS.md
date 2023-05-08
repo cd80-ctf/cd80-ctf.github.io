@@ -250,3 +250,41 @@ If we do this, we end up with the following list of functions:
 - `CClfsBaseFile::ScanContainerInfo`
 
 This might seem like a lot. It is. Don't worry. We'll go through these options one by one, starting with the simplest and eliminating functions that we conclude aren't useful. By the end, hopefully, we'll have something with which to do evil.
+
+## Gadgets
+
+### `CClfsLogFcbPhysical::GetContainer`
+By a bessing of the exploit gods, we find something (potentially) useful in our first target, `CClfsLogFcbPhysical::GetContainer`:
+
+```
+CClfsContainer* CClfsLogFcbPhysical::GetContainer(CClfsLogFcbPhysical *this,ulong param_1)
+{
+  CClfsContainer *pCVar1;
+  _CLFS_CONTAINER_CONTEXT *local_res18 [2];
+  
+  pCVar1 = (CClfsContainer *)0x0;
+  local_res18[0] = (_CLFS_CONTAINER_CONTEXT *)0x0;
+  if (param_1 == 0xffffffff) {
+    pCVar1 = (CClfsContainer *)0x0;
+  }
+  else {
+    CClfsBaseFile::AcquireContainerContext
+              (*(CClfsBaseFile **)(this + 0x2b0),
+               *(ulong *)(this + (ulonglong)(param_1 & 0x3ff) * 4 + 0x558),local_res18);
+    if (local_res18[0] != (_CLFS_CONTAINER_CONTEXT *)0x0) {
+      pCVar1 = local_res18[0]->pContainer;
+      _guard_dispatch_icall(pCVar1); // [3]
+      CClfsBaseFile::ReleaseContainerContext(*(CClfsBaseFile **)(this + 0x2b0),local_res18);
+    }
+  }
+  return pCVar1;
+}
+```
+
+This is a very simple function. That's good. We want our exploit primitives to be as simple as possible. And, in fact, this function is about as simple as possible: it just gets the `pContainer` of a Container Context, *calls a virtual function on it* (`[3]`), and returns it.
+
+Five years ago, this would practically be game over. Since we control `pContainer`, we control the virtual function table of `pContainer`. Thus this function straight-up hands us control of execution on a silver platter. We could not call a function in user-space (due to SMEP), but we could probably find a useful gadget somewhere in kernel space to do pseudo-ROP on, and we would be golden.
+
+However, in CFG's world, no such fun is allowed. If we try to call any address that isn't pre-marked as a function entry point, Windows will take its ball and go home (to a bluescreen). This severely cripples our ability to exploit this primitive. This is actually quite remarkable. Ten years ago, an arbitrary call primitive like this would be an immediate exploit. Now it's an open question whether it can be exploited at all.
+
+In short, `CClfsLogFcbPhysical::GetContainer` gives us the ability to call an arbitrary kernel function with a single controlled argument. We will put this primitive in our bucket and keep going.
