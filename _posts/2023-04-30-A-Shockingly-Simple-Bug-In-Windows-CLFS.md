@@ -288,3 +288,35 @@ Five years ago, this would practically be game over. Since we control `pContaine
 However, in CFG's world, no such fun is allowed. If we try to call any address that isn't pre-marked as a function entry point, Windows will take its ball and go home (to a bluescreen). This severely cripples our ability to exploit this primitive. This is actually quite remarkable. Ten years ago, an arbitrary call primitive like this would be an immediate exploit. Now it's an open question whether it can be exploited at all.
 
 In short, `CClfsLogFcbPhysical::GetContainer` gives us the ability to call an arbitrary kernel function with a single controlled argument. We will put this primitive in our bucket and keep going.
+
+### Other Arbitrary Call Primitives
+
+As it turns out, almost all of our gadgets contain arbitrary call primitives. In the source code, these will usually be calls to `CClfsContainer::AddRef` or `CClfsContainer::Remove`. The second call is more interesting for one reason: it resides at offset `0x8` in the virtual function table, rather than offset `0x0` like `AddRef`.
+This means that the arbitrary argument we pass to our arbitrary call (which must be the `CClfsContainer` itself) can have a controlled value at it. As such, we will group our arbitrary call primitives by whether they call `AddRef` or `Remove`:
+
+Basic `AddRef` primitives (offset `0x0`):
+- `CClfsLogFcbPhysical::GetContainer`
+- `CClfsLogFcbPhysical::FlushLog`
+
+Basic Remove primitives (offset `0x8`):
+- `CClfsLogFcbPhysical::CloseContainers`
+
+Multiple call primitives:
+- `CClfsBaseFilePersisted::CheckSecureAccess` (`0x0` and `0x8`)
+- `CClfsBaseFilePersisted::RemoveContainer` (`0x8` and `0x18`)
+
+Several functions are more complex, and deserve research of their own:
+
+### `CClfsBaseFilePersisted::LoadContainerQ`
+
+### `CClfsBaseFilePersisted::UnloadContainerQ`
+
+### `CClfsBaseFilePersisted::UnmarkContainerQ`
+
+### `CClfsBaseFilePersisted::WriteMetadataBlock`
+
+### `CClfsContainer::QueryContainerInfo`
+
+### `CClfsLogFcbPhysical::DeleteContainer`
+
+### `CClfsLogFcbPhysical::WrapDeletePendingContainer`
