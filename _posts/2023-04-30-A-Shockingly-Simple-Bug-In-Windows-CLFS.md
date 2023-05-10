@@ -395,7 +395,7 @@ LONG_PTRObfDereferenceObject (__ in PVOID Object / / our evil pContainer) {
 }
 ```
 
-Turning to [yet another shady site], we find that `OBJECT_TO_OBJECT_HEADER` and `ObpDecrPointerCount` are both macros:
+Turning to [yet another shady site](https://systemroot.gitee.io/pages/apiexplorer/d5/d1/obp_8h.html), we find that `OBJECT_TO_OBJECT_HEADER` and `ObpDecrPointerCount` are both macros:
 
 ```c
 #define OBJECT_TO_OBJECT_HEADER( o ) CONTAINING_RECORD( (o), OBJECT_HEADER, Body )  // returns some fixed, negative offset from x
