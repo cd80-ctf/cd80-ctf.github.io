@@ -298,18 +298,134 @@ Basic `AddRef` primitives (offset `0x0`):
 - `CClfsLogFcbPhysical::GetContainer`
 - `CClfsLogFcbPhysical::FlushLog`
 
-Basic Remove primitives (offset `0x8`):
-- `CClfsLogFcbPhysical::CloseContainers`
-
 Multiple call primitives:
 - `CClfsBaseFilePersisted::CheckSecureAccess` (`0x0` and `0x8`)
 - `CClfsBaseFilePersisted::RemoveContainer` (`0x8` and `0x18`)
 
 Several functions are more complex, and deserve research of their own:
 
-### `CClfsBaseFilePersisted::LoadContainerQ`
+### `CClfsLogFcbPhysical::CloseContainers`
+
+This is the simplest of the complex primitives, and is thus a good place to start. Cutting out the crap, it looks like this:
+
+```c
+long __thiscall CClfsLogFcbPhysical::CloseContainers(CClfsLogFcbPhysical *this)
+
+{
+  _CLFS_CONTAINER_CONTEXT *p_Var1;
+  long result;
+  uint uVar3;
+  _CLFS_CONTAINER_CONTEXT *local_res8;
+  
+  containerContext = (_CLFS_CONTAINER_CONTEXT *)0x0;
+  result = 0;
+  uVar3 = *(uint *)(this + 0x554);
+  if (uVar3 < *(uint *)(this + 0x550)) {
+    do {
+      result = CClfsBaseFile::AcquireContainerContext
+                        (*(CClfsBaseFile **)(this + 0x2b0),
+                         *(ulong *)(this + (ulonglong)(uVar3 & 0x3ff) * 4 + 0x558),&containerContext);
+      containerContextMirror = containerContext;
+      if ((result < 0) || (local_res8 == (_CLFS_CONTAINER_CONTEXT *)0x0)) {
+        return -0x3fe5fff3;
+      }
+      if (containerContext->pContainer != (CClfsContainer *)0x0) {
+        CClfsContainer::Close(containerContext->pContainer);  // [4]
+        _guard_dispatch_icall();   // [5] | calls pContainer + 0x8
+        containerContextMirror->pContainer = (CClfsContainer *)0x0;
+      }
+      CClfsBaseFile::ReleaseContainerContext(*(CClfsBaseFile **)(this + 0x2b0),&containerContext);
+      uVar3 = uVar3 + 1;
+    } while (uVar3 < *(uint *)(this + 0x550));
+  }
+  return lVar2;
+}
+```
+
+This is a fairly simple function. It seems to just loop over and release containers stored in the `CClfsLogFcbPhysical`. Just like in the basic hooks, we see that we get an arbitrary call primitive at `[5]`. However, our evil `pContainer` is also passed to two other functions: `CClfsContainer::Close()` and `CClfsBaseFile::ReleaseContainerContext()`.
+Here, we see the hydra of exploit development rear its head, as primitives beget primitives. To fully explore our playground, we must now look find out whether these two functions are condusive to shenanigans as well.
+
+Thankfully, we don't have to look far, as `CClfsContainer::Close()` is both short and immediately interesting:
+
+```c
+long __thiscall CClfsContainer::Close(CClfsContainer *this)
+{
+  int iVar1;
+  
+  if (*(longlong *)(this + 0x20) == 0) {
+    iVar1 = -0x3ffffff8;
+  }
+  else {
+    iVar1 = ZwClose();
+    if (-1 < iVar1) {
+      *(undefined8 *)(this + 0x20) = 0;
+      *(undefined8 *)(this + 8) = 0;
+    }
+    ObfDereferenceObject(*(undefined8 *)(this + 0x30));
+    *(undefined8 *)(this + 0x30) = 0;
+  }
+  return iVar1;
+}
+```
+
+Right away, we have a slew of interesting primitives. First, we see that several offsets from our controlled `pContainer` are set to zero (remember, we control `this`). Thus this call path gives us a new primitive: several **arbitrary offset uncontrolled writes**. These are difficult to exploit, but not impossible (I believe there are some Linux kernel exploits that use these to corrupt verified eBPF code, and whatnot).
+Unfortunately, this overwrites *several* offsets from our evil pointer, not just one. This is unfortunate because when we're doing memory corruption, we usually want to tweak an object just slightly, overwriting maybe one or two core fields. A scattershot approach like this is more likely to lead to a crash than anything interesting. Thus these writes are interesting, but probably a last resort.
+
+Other than those writes, we also see that the value `this + 0x30` is passed to `ObfDereferenceObject`. Another head sprouts on the hydra: what does *this* function do?
+
+To find the answer, as is often the case in exploit development, we mus turn to a [shady site on the second page of the Google results](https://laravel.wiki/obcreateobject-and-obdereferenceobject-and-obremoveobjectroutine.html). This page purports to offer the source code of this undocumented function:
+
+```c
+LONG_PTRObfDereferenceObject (__ in PVOID Object / / our evil pContainer) {
+    [code code code...]
+    // Directly subtract 0x18 from the object body to be the object header
+    ObjectHeader = OBJECT_TO_OBJECT_HEADER( Object );
+
+    [shitty kernel code...]
+
+    // Simple decreasing PointerCount field
+    Result = ObpDecrPointerCount( ObjectHeader );
+
+    // Decrement to 0 will be deleted
+    if (Result == 0) {
+        [do more stuff to destroy the object]
+    }
+
+    return Result;
+}
+```
+
+Turning to [yet another shady site], we find that `OBJECT_TO_OBJECT_HEADER` and `ObpDecrPointerCount` are both macros:
+
+```c
+#define OBJECT_TO_OBJECT_HEADER( o ) CONTAINING_RECORD( (o), OBJECT_HEADER, Body )  // returns some fixed, negative offset from x
+#define ObpDecrPointerCount(np)   InterlockedDecrement( &np->PointerCount )
+```
+
+Finally, somehow, we end up back in documented code and on websites that aren't dropping exploit kits on me. The function [`InterlockedDecrement`](https://learn.microsoft.com/en-us/windows/win32/api/winnt/nf-winnt-interlockeddecrement) is defined to simply subtract 1 from the pointed-to value.
+
+That was a *lot* of nonsense. Let's take a step back and sketch out the pseudocode of what happens here, from an exploit development viewpoint:
+
+```c
+function DoEvilWithPointer(CClfsContainer* evilPointer) {
+    void* secondEvilPointer = *(void*)(evilPointer + 0x30);
+    void* secondEvilPointerHeader = secondEvilPointer - 0x18;  // OBJECT_TO_OBJECT_HEADER basically just subtracts 0x18
+    void* secondEvilPointerPointerCount = evilPointerHeader;  // PointerCount is the first element of the object, so &secondEvilPointerHeader->PointerCount is a no-op
+    *secondEvilPointerPointerCount -= 1;
+}
+```
+
+Now *this* is interesting. This code path reads a pointer from our controlled pointer, finds a value at some fixed offset from the second pointer, and decreases it by 1. That is, **this code path lets us decrement the value at a single arbitrary address by 1**.
+
+This primitive is often called **arbitrary address decrement**, and until five months ago, it was free privilege escalation on Windows 11 (and still is on Windows 10). Basically, there was a boolean in kernel space called `bannedFromReadingAndWritingKernelMemory` (technically, it was called `PreviousMode`) that functioned exactly as described. This is how the in-the-wild ransomware sample worked: it would use this arbitrary address decrement to set `bannedFromReadingAndWritingKernelMemory = 0`, then proceeded to etc. etc.
+
+Unfortunately, Microsoft made it much harder to abuse this value in November 2022. It still might be possible to bypass the patch via a race condition, but it's pretty messy. Fortunately, there's a more reliable (if more complex) way to use an arbitrary address decrement: **it allows us to create a use-after-free on any reference-counted object.**
+
+## Turning Arbitrary Decrement into Use-After-Free
 
 ### `CClfsBaseFilePersisted::UnloadContainerQ`
+
+### `CClfsBaseFilePersisted::LoadContainerQ`
 
 ### `CClfsBaseFilePersisted::UnmarkContainerQ`
 
