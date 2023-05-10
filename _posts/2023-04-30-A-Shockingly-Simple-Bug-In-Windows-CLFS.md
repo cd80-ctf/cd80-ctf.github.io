@@ -343,7 +343,7 @@ long __thiscall CClfsLogFcbPhysical::CloseContainers(CClfsLogFcbPhysical *this)
 ```
 
 This is a fairly simple function. It seems to just loop over and release containers stored in the `CClfsLogFcbPhysical`. Just like in the basic hooks, we see that we get an arbitrary call primitive at `[5]`. However, our evil `pContainer` is also passed to two other functions: `CClfsContainer::Close()` and `CClfsBaseFile::ReleaseContainerContext()`.
-Here, we see the hydra of exploit development rear its head, as primitives beget primitives. To fully explore our playground, we must now look find out whether these two functions are condusive to shenanigans as well.
+Here the hydra of exploit development rears its head as primitives beget primitives. To fully explore our playground, we must now look find out whether these two functions are condusive to shenanigans as well.
 
 Thankfully, we don't have to look far, as `CClfsContainer::Close()` is both short and immediately interesting:
 
