@@ -368,12 +368,12 @@ long __thiscall CClfsContainer::Close(CClfsContainer *this)
 }
 ```
 
-Right away, we have a slew of interesting primitives. First, we see that several offsets from our controlled `pContainer` are set to zero (remember, we control `this`). Thus this call path gives us a new primitive: several **arbitrary offset uncontrolled writes**. These are difficult to exploit, but not impossible (I believe there are some Linux kernel exploits that use these to corrupt verified eBPF code, and whatnot).
+Right away, we have a slew of interesting primitives. First, we see that several offsets from our controlled `pContainer` are set to zero (remember, we control `this`). Thus this call path gives us a new primitive: several **arbitrary offset uncontrolled writes**. These are difficult to exploit, but not impossible (I believe there are some Linux kernel exploits that use these to corrupt verified eBPF code and whatnot).
 Unfortunately, this overwrites *several* offsets from our evil pointer, not just one. This is unfortunate because when we're doing memory corruption, we usually want to tweak an object just slightly, overwriting maybe one or two core fields. A scattershot approach like this is more likely to lead to a crash than anything interesting. Thus these writes are interesting, but probably a last resort.
 
 Other than those writes, we also see that the value `this + 0x30` is passed to `ObfDereferenceObject`. Another head sprouts on the hydra: what does *this* function do?
 
-To find the answer, as is often the case in exploit development, we mus turn to a [shady site on the second page of the Google results](https://laravel.wiki/obcreateobject-and-obdereferenceobject-and-obremoveobjectroutine.html). This page purports to offer the source code of this undocumented function:
+To find the answer, as is often the case in exploit development, we turn to a [shady site on the second page of the Google results](https://laravel.wiki/obcreateobject-and-obdereferenceobject-and-obremoveobjectroutine.html). This page purports to offer the source code of this undocumented function:
 
 ```c
 LONG_PTRObfDereferenceObject (__ in PVOID Object / / our evil pContainer) {
