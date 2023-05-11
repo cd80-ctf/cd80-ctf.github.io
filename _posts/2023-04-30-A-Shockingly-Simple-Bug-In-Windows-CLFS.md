@@ -419,7 +419,56 @@ Now *this* is interesting. This code path reads a pointer from our controlled po
 
 This primitive is often called **arbitrary address decrement**, and until five months ago, it was free privilege escalation on Windows 11 (and still is on Windows 10). Basically, there was a boolean in kernel space called `bannedFromReadingAndWritingKernelMemory` (technically, it was called `PreviousMode`) that functioned exactly as described. This is how the in-the-wild ransomware sample worked: it would use this arbitrary address decrement to set `bannedFromReadingAndWritingKernelMemory = 0`, then proceeded to etc. etc.
 
-Unfortunately, Microsoft made it much harder to abuse this value in November 2022. It still might be possible to bypass the patch via a race condition, but it's pretty messy. Fortunately, there's a more reliable (if more complex) way to use an arbitrary address decrement: **it allows us to create a use-after-free on any reference-counted object.**
+Unfortunately, Microsoft made it much harder to abuse this value in November 2022. It still might be possible to bypass the patch via a race condition, but it's pretty messy. Fortunately, there are other ways to turn an arbitrary address decrement into privilege escalation. One is to decrement the reference counter of an object, essentially allowing a use-after-free.
+This would probably work eventually, but would require thoroughly ugly heap feng shui. As such, we will attempt another method which has been used to weaponize arbitrary decrement in the past. As with many *interesting features* of Windows, it targets the window subsystem.
+
+## One Bit to Rule them All: `bServerSideWindowProc`
+
+Deep within the core of windows lies the WND structure. As the name suggests, WND is used to represent a window, such as the browser window you're currently reading this writeup in (well, if you're on Windows). The mere existence of WND should not come as a surprise: every modern operating system has a similar window object. However, uniquely to Windows, a large portion of a WND object's functionality is
+handled via **user-mode callbacks from kernel mode**.
+
+Specifically, when we create a window on Windows using `CreateWindowEx`, we have the option to provide a callback via the parameter `lpfnWndProc`:
+
+```c
+LRESULT CALLBACK windowCallback(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
+{
+    printf("Shenanigans!\n");
+    return 0;
+}
+
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
+    WNDCLASSEX wc;
+    const wchar_t windowClassName[]  = L"EvilWindow"
+
+    //Step 1: Register a custom window class "EvilWindow"
+    wc.hInstance     = hInstance;
+    wc.lpszClassName = windowClassName;
+    wc.lpfnWndProc   = windowCallback;
+
+    if(!RegisterClassEx(&wc))
+    {
+        return 0;
+    }
+
+    // Step 2: Create a window of class "EvilWindow"
+    HWND hwnd = CreateWindowEx(
+      0,                         // Optional window styles.
+      windowClassName,           // Window class
+      L"Wherein Shenanigans",    // Window text
+      [more parameters]
+    );
+    
+    return 0;
+}
+```
+
+Once we have registered this window, our function `windowCallback` will be called from kernel mode whenever something happens to the window!
+
+"But wait," you may ask, and rightly so. "Isn't this a gaping security flaw?"
+
+Almost. Of course, the kernel will not blindly execute a user function with kernel privileges. Before calling the user-mode callback, it will drop its privileges to user mode. Thus `windowCallback` will not actually be executed with kernel privileges.
+
+That is, unless one specific bit is set.
 
 ## Turning Arbitrary Decrement into Use-After-Free
 
