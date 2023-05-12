@@ -470,6 +470,19 @@ Almost. Of course, the kernel will not blindly execute a user function with kern
 
 That is, unless one specific bit is set.
 
+As it turns out, every WND structure has a bit called `bServerSideWindowProc`. This bit indicates whether the callback function is from the kernel (1), or the user (0). If the callback is from the kernel (`bServerSideWindowProc = 1`), then **the callback function will be invoked without dropping privileges!**
+
+This may seem confusing. After all, our primitive is to **decrement** a value by one, not increment it. But recall: our primitive decrements a **four-byte integer**, not a single byte! This means that if we decrement an "integer" whose last byte is `bServerSideWindowProc = 0`, that decrement will bring the value of `bServerSideWindowProc` to 1!
+
+Thus, our path to victory becomes clearer:
+
+1) Create a WND object
+2) Assign an evil callback to the WND object
+3) Leak the address of the WND object (!)
+4) Use our arbitrary decrement to decrement the integer based at `bServerSideWindowProc`
+5) Trigger the callback
+6) Profit
+
 ## Turning Arbitrary Decrement into Use-After-Free
 
 ### `CClfsBaseFilePersisted::UnloadContainerQ`
